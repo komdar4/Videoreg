@@ -14,6 +14,8 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QScreen>
+#include <QMediaMetaData>
+#include <QTimer>
 #include <iostream>
 
 #define URL_CAMERA                  "rtsp://192.168.0.237"
@@ -32,7 +34,7 @@ public:
         QFont last_name_font = person_last_name->font();
         last_name_font.setPointSize(20);
         person_last_name->setFont(last_name_font);
-        QRegularExpressionValidator *validator = new QRegularExpressionValidator(QRegularExpression("^[a-zA-Zа-яА-Я0-9_-]+$"), person_last_name);
+        QRegularExpressionValidator *validator = new QRegularExpressionValidator(QRegularExpression("^[\\sa-zA-Zа-яА-Я0-9_-]+$"), person_last_name);
         person_last_name->setValidator(validator);
 
         int button_hight = 50;
@@ -41,6 +43,7 @@ public:
         QFont* record_button_text = new QFont();
         record_button_text->setPointSize(20);
         recordButton->setFont(*record_button_text);
+        recordButton->setEnabled(false);
 
         videoWidget = new QVideoWidget();
         int screen_height = QGuiApplication::primaryScreen()->geometry().height();
@@ -62,10 +65,14 @@ public:
         controlLayout->addWidget(person_last_name);
         controlLayout->addStretch(1);
 
+        timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, &RTSPRecorder::onTimeout);
+        timer->setInterval(5000);
 
         // Обработчики кнопок
         connect(recordButton, &QPushButton::clicked, this, &RTSPRecorder::Recording);
         connect(mediaPlayer, &QMediaPlayer::errorOccurred, this, &RTSPRecorder::handleMediaError);
+        connect(mediaPlayer, &QMediaPlayer::mediaStatusChanged, this, &RTSPRecorder::CameraFound);
         ffmpegProcess = new QProcess(this);
         connect(ffmpegProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &RTSPRecorder::onFfmpegFinished);
         mediaPlayer->setSource(QUrl(rtspUrl));
@@ -130,7 +137,29 @@ private slots:
     }
 
     void handleMediaError([[maybe_unused]]QMediaPlayer::Error error) {
-        QMessageBox::critical(this, "Ошибка медиаплеера", mediaPlayer->errorString());
+        if(was_error)
+            return;
+        was_error = true;
+        recordButton->setEnabled(false);
+        QMessageBox::critical(this, "Ошибка", "Нет сигнала");
+        timer->start();
+    }
+
+    void CameraFound(QMediaPlayer::MediaStatus status)
+    {
+        if( status != QMediaPlayer::MediaStatus::BufferingMedia)
+            return;
+        timer->stop();
+        recordButton->setEnabled(true);
+        was_error = false;
+    }
+
+    void onTimeout()
+    {
+        mediaPlayer->stop();
+        mediaPlayer->setSource(QUrl());
+        mediaPlayer->setSource(QUrl(rtspUrl));
+        mediaPlayer->play();
     }
 
 private:
@@ -140,7 +169,9 @@ private:
     QMediaPlayer *mediaPlayer;
     QVideoWidget *videoWidget;
     QString rtspUrl = URL_CAMERA;
+    QTimer* timer;
     bool record_state = true;
+    bool was_error = false;
 };
 
 int main(int argc, char *argv[]) {
