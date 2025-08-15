@@ -26,7 +26,7 @@ class MyLineEdit : public QLineEdit
 {
     Q_OBJECT
 public:
-    explicit MyLineEdit(QWidget *parent = nullptr) : QLineEdit(parent)
+    explicit MyLineEdit(QString keyboard_path, QWidget *parent = nullptr) : QLineEdit(parent), keyboard_path(keyboard_path)
     {
         keyboard_process = new QProcess(this);
     }
@@ -40,14 +40,20 @@ protected:
     {
         if(keyboard_process->state() == QProcess::Running)
             return;
-        keyboard_process->start("osk", {});
+        connect(keyboard_process, &QProcess::errorOccurred, [this](QProcess::ProcessError error){
+            QMessageBox::critical(this, "Ошибка", "Ошибка запуска процесса клавиатуры, код: "
+                                                      + QString::number(static_cast<int>(error)));
+        });
+        keyboard_process->start(keyboard_path, {});
         if (!keyboard_process->waitForStarted()) {
-            QMessageBox::critical(this, "Ошибка", "Не удалось открыть клавиатуру");
+            QMessageBox::critical(this, "Ошибка", "Не удалось открыть клавиатуру, код: "
+                                                  + QString::number(keyboard_process->exitCode()));
             return;
         }
     }
 private:
     QProcess* keyboard_process = nullptr;
+    QString keyboard_path;
 };
 
 class RTSPRecorder : public QMainWindow {
@@ -59,8 +65,9 @@ public:
         QSettings settings("CamRecorder.ini", QSettings::IniFormat);
         rtspUrl = settings.value("Config/URLCamera", "").toString();
         base_path = settings.value("Config/PathSavingVideos", "").toString();
+        keyboard_path = settings.value("Config/KeyboardPath", "osk").toString();
 
-        person_last_name = new MyLineEdit();
+        person_last_name = new MyLineEdit(keyboard_path);
         person_last_name->setFixedSize(500, 50);
         person_last_name->setMaxLength(30);
         QFont last_name_font = person_last_name->font();
@@ -274,7 +281,7 @@ private:
     QMediaPlayer *mediaPlayer;
     QVideoWidget *videoWidget;
     QString rtspUrl;
-    QString base_path;
+    QString base_path, keyboard_path;
     QTimer* timer;
     QFileDialog *dialog;
     QDialog *about_dialog;
